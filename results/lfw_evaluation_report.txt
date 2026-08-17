@@ -1,0 +1,16 @@
+Duplicate Detection Evaluation Report
+=====================================
+Gallery size: 60
+Total probes: 229
+TP: 105
+FP: 0
+FN: 124
+
+Precision: 100.00%
+Recall:    45.85%
+F1-score:  62.87%
+
+Detection success rate: 100.00%
+Avg inference time (ms): 776.24
+False Positive Rate (probes): 0.00%
+Overall probe accuracy: 45.85%
