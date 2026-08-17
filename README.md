@@ -1,4 +1,4 @@
-# Face Detection & Recognition Pipeline (RetinaFace + AdaFace + FAISS)
+# Real-Time Face Recognition & Deduplication Pipeline
 
 An end-to-end face detection, alignment, embedding, and duplicate/identity-matching pipeline, built on top of [RetinaFace](https://arxiv.org/abs/1905.00641) for detection and [AdaFace](https://github.com/mk-minchul/AdaFace) for recognition embeddings, with a FAISS vector index (wrapped via LangChain) for fast similarity search.
 
