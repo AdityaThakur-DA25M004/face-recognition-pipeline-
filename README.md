@@ -83,13 +83,14 @@ python build_lfw_eval_set.py --num-identities 60 --min-images 4 --max-images 6
 python evaluation.py --data ./lfw_evaluation_images --weights ./weights/Resnet50_Final.pth --threshold 0.75
 ```
 
-**Result** (FaceNet/VGGFace2 embeddings, RetinaFace-ResNet50 detector, threshold=0.75, 60 gallery identities / 229 probes):
+`threshold_sweep.py` computes embeddings once for the same 60-identity / 229-probe LFW set and sweeps similarity thresholds, for either embedding backbone (`--embedder facenet|adaface`), so the two can be compared head-to-head under identical detection/eval conditions:
 
-| Precision | Recall | F1 | False-positive rate |
-|:-:|:-:|:-:|:-:|
-| 100.0% | 45.9% | 62.9% | 0.0% |
+```bash
+python threshold_sweep.py --data ./lfw_evaluation_images --embedder facenet --output ./results/threshold_sweep_lfw.txt --plot ./results/pr_curve_lfw.png
+python threshold_sweep.py --data ./lfw_evaluation_images --embedder adaface --output ./results/threshold_sweep_lfw_adaface.txt --plot ./results/pr_curve_lfw_adaface.png
+```
 
-The similarity threshold clearly trades recall for precision — `threshold_sweep.py` computes embeddings once and sweeps thresholds to quantify that tradeoff ([full table](results/threshold_sweep_lfw.txt)):
+**FaceNet (VGGFace2)** — RetinaFace landmarks + VGG-Face-style alignment ([full table](results/threshold_sweep_lfw.txt)):
 
 | threshold | precision | recall | F1 | FPR |
 |:-:|:-:|:-:|:-:|:-:|
@@ -104,11 +105,22 @@ The similarity threshold clearly trades recall for precision — `threshold_swee
 
 <p align="center"><img src="results/pr_curve_lfw.png" width="560"></p>
 
-```bash
-python threshold_sweep.py --data ./lfw_evaluation_images --output ./results/threshold_sweep_lfw.txt --plot ./results/pr_curve_lfw.png
-```
+**AdaFace (ir_50, WebFace4M)** — MTCNN alignment, the embedder used in the production pipeline (`face_pipeline_adaface.py`) ([full table](results/threshold_sweep_lfw_adaface.txt)):
 
-Takeaway: at the pipeline's default threshold (0.75), the system never misidentifies one person as another (0% FPR across all thresholds ≥0.60), but only recognizes ~46% of genuinely varied real-world photos of the same person as a duplicate — a conservative operating point appropriate for a dedup/registration gate, but too strict for a "did we already see this person" identification use case. Lowering to ~0.5–0.55 trades a small false-positive rate (~0.4–1.3%) for substantially higher recall (91–96%).
+| threshold | precision | recall | F1 | FPR |
+|:-:|:-:|:-:|:-:|:-:|
+| 0.45 | 100.0% | 94.8% | 97.3% | 0.00% |
+| 0.50 | 100.0% | 91.3% | 95.4% | 0.00% |
+| 0.55 | 100.0% | 85.6% | 92.2% | 0.00% |
+| 0.60 | 100.0% | 68.6% | 81.3% | 0.00% |
+| 0.65 | 100.0% | 52.0% | 68.4% | 0.00% |
+| 0.70 | 100.0% | 35.4% | 52.3% | 0.00% |
+| 0.75 | 100.0% | 21.4% | 35.3% | 0.00% |
+| 0.80 | 100.0% | 8.3% | 15.3% | 0.00% |
+
+<p align="center"><img src="results/pr_curve_lfw_adaface.png" width="560"></p>
+
+Takeaway: on the same real-photo probes, AdaFace clearly outperforms FaceNet — at threshold 0.45 it reaches **94.8% recall at 100% precision / 0% FPR**, whereas FaceNet needs to drop below 0.55 to exceed 90% recall and only does so by also accepting a non-zero false-positive rate (0.44–1.75%). This is the quantitative justification for using AdaFace in the production pipeline rather than just a qualitative "cleaner separation" claim. FaceNet's own default operating point (threshold=0.75) is a much more conservative one — it never misidentifies one person as another (0% FPR at ≥0.60) but only recognizes ~46% of genuinely varied photos of the same person as a duplicate, appropriate for a strict dedup gate but too strict for general identification.
 
 LFW images are downloaded transiently for benchmarking only (see `build_lfw_eval_set.py`); the `lfw_evaluation_images/` folder is gitignored and not redistributed in this repo.
 

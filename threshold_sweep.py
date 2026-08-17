@@ -16,7 +16,6 @@ import os
 import cv2
 import numpy as np
 import torch
-from facenet_pytorch import InceptionResnetV1
 
 from face_aligner import FaceAlignerVGG
 from face_detector import FaceDetector
@@ -28,7 +27,7 @@ def l2_norm_vec(x: np.ndarray) -> np.ndarray:
     return x / n if n != 0 else x
 
 
-def get_embedding(path, detector, aligner, embedder, device):
+def get_embedding_facenet(path, detector, aligner, embedder, device):
     img_bgr = cv2.imread(path)
     if img_bgr is None:
         return None
@@ -44,11 +43,53 @@ def get_embedding(path, detector, aligner, embedder, device):
     return l2_norm_vec(feat)
 
 
+def get_embedding_adaface(path, align_module, model, to_input_fn, device):
+    try:
+        aligned_rgb_img = align_module.get_aligned_face(path)
+    except Exception:
+        return None
+    if aligned_rgb_img is None:
+        return None
+    img_tensor = to_input_fn(aligned_rgb_img).to(device)
+    with torch.no_grad():
+        feat, _ = model(img_tensor)
+        feat = feat.cpu().numpy().flatten()
+    return l2_norm_vec(feat)
+
+
+def build_embedder(embedder_name, device, weights_path):
+    """Returns a zero-arg-per-image callable: embed_fn(path) -> np.ndarray | None."""
+    if embedder_name == "facenet":
+        from facenet_pytorch import InceptionResnetV1
+
+        detector = FaceDetector(model_path=weights_path)
+        aligner = FaceAlignerVGG(device=device)
+        embedder = InceptionResnetV1(pretrained="vggface2").eval().to(device)
+        return lambda path: get_embedding_facenet(path, detector, aligner, embedder, device)
+
+    if embedder_name == "adaface":
+        import net
+        from face_alignment import align
+
+        state_dict = torch.load("./pretrained/adaface_ir50_webface4m.ckpt", map_location=device)["state_dict"]
+        model_state = {k[6:]: v for k, v in state_dict.items() if k.startswith("model.")}
+        model = net.build_model("ir_50")
+        model.load_state_dict(model_state)
+        model.eval().to(device)
+
+        def to_input(pil_rgb_image):
+            np_img = np.array(pil_rgb_image)
+            bgr_img = ((np_img[:, :, ::-1] / 255.0) - 0.5) / 0.5
+            return torch.tensor([bgr_img.transpose(2, 0, 1)]).float()
+
+        return lambda path: get_embedding_adaface(path, align, model, to_input, device)
+
+    raise ValueError(f"Unknown embedder: {embedder_name}")
+
+
 def main(args):
     device = "cuda" if torch.cuda.is_available() and not args.force_cpu else "cpu"
-    detector = FaceDetector(model_path=args.weights)
-    aligner = FaceAlignerVGG(device=device)
-    embedder = InceptionResnetV1(pretrained="vggface2").eval().to(device)
+    embed_fn = build_embedder(args.embedder, device, args.weights)
 
     persons = sorted(d for d in os.listdir(args.data) if os.path.isdir(os.path.join(args.data, d)))
 
@@ -60,13 +101,13 @@ def main(args):
         imgs = sorted(f for f in os.listdir(folder) if f.lower().endswith((".jpg", ".jpeg", ".png")))
         if not imgs:
             continue
-        emb = get_embedding(os.path.join(folder, imgs[0]), detector, aligner, embedder, device)
+        emb = embed_fn(os.path.join(folder, imgs[0]))
         if emb is None:
             continue
         gallery_emb.append(emb)
         gallery_ids.append(pid)
         for probe_name in imgs[1:]:
-            probes.append((pid, get_embedding(os.path.join(folder, probe_name), detector, aligner, embedder, device)))
+            probes.append((pid, embed_fn(os.path.join(folder, probe_name))))
 
     gallery_emb = np.stack(gallery_emb).astype("float32")
     print(f"Gallery: {len(gallery_ids)} identities, Probes: {len(probes)}")
@@ -105,6 +146,7 @@ def main(args):
     if args.output:
         os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
         with open(args.output, "w", encoding="utf-8") as f:
+            f.write(f"Embedder: {args.embedder}\n")
             f.write(f"Gallery: {len(gallery_ids)} identities, Probes: {len(probes)}\n")
             f.write("\n".join(lines) + "\n")
         print(f"Report saved to: {args.output}")
@@ -119,7 +161,7 @@ def main(args):
         plt.plot(ts, [r[3] * 100 for r in rows], marker="o", label="F1")
         plt.xlabel("Cosine similarity threshold")
         plt.ylabel("%")
-        plt.title("Precision / Recall / F1 vs. threshold (LFW eval)")
+        plt.title(f"Precision / Recall / F1 vs. threshold (LFW eval, {args.embedder})")
         plt.legend()
         plt.grid(alpha=0.3)
         plt.tight_layout()
@@ -132,6 +174,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Sweep similarity thresholds on a gallery/probe eval set.")
     parser.add_argument("--data", type=str, default="./lfw_evaluation_images")
     parser.add_argument("--weights", type=str, default="./weights/Resnet50_Final.pth")
+    parser.add_argument("--embedder", type=str, choices=["facenet", "adaface"], default="facenet",
+                         help="Embedding backbone: facenet (RetinaFace+VGG-Face align) or adaface (MTCNN align)")
     parser.add_argument("--thresholds", type=float, nargs="+", default=[0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8])
     parser.add_argument("--output", type=str, default="./logs/threshold_sweep_lfw.txt")
     parser.add_argument("--plot", type=str, default="./logs/pr_curve_lfw.png")
