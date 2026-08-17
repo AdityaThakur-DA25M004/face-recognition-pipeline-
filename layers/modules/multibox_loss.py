@@ -3,8 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 from utils.box_utils import match, log_sum_exp
-from data import cfg_mnet
-GPU = cfg_mnet['gpu_train']
 
 class MultiBoxLoss(nn.Module):
     """SSD Weighted Loss Function
@@ -56,6 +54,7 @@ class MultiBoxLoss(nn.Module):
 
         loc_data, conf_data, landm_data = predictions
         priors = priors
+        device = loc_data.device
         num = loc_data.size(0)
         num_priors = (priors.size(0))
 
@@ -69,12 +68,11 @@ class MultiBoxLoss(nn.Module):
             landms = targets[idx][:, 4:14].data
             defaults = priors.data
             match(self.threshold, truths, defaults, self.variance, labels, landms, loc_t, conf_t, landm_t, idx)
-        if GPU:
-            loc_t = loc_t.cuda()
-            conf_t = conf_t.cuda()
-            landm_t = landm_t.cuda()
+        loc_t = loc_t.to(device)
+        conf_t = conf_t.to(device)
+        landm_t = landm_t.to(device)
 
-        zeros = torch.tensor(0).cuda()
+        zeros = torch.tensor(0).to(device)
         # landm Loss (Smooth L1)
         # Shape: [batch,num_priors,10]
         pos1 = conf_t > zeros
@@ -114,7 +112,8 @@ class MultiBoxLoss(nn.Module):
         neg_idx = neg.unsqueeze(2).expand_as(conf_data)
         conf_p = conf_data[(pos_idx+neg_idx).gt(0)].view(-1,self.num_classes)
         targets_weighted = conf_t[(pos+neg).gt(0)]
-        loss_c = F.cross_entropy(conf_p, targets_weighted, reduction='sum')
+        class_weights = torch.tensor([1.0, 5.0]).to(device)  # emphasize faces 5x more
+        loss_c = F.cross_entropy(conf_p, targets_weighted, weight=class_weights, reduction='sum')
 
         # Sum of losses: L(x,c,l,g) = (Lconf(x, c) + αLloc(x,l,g)) / N
         N = max(num_pos.data.sum().float(), 1)

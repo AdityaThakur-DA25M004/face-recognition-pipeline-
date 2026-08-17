@@ -75,6 +75,19 @@ class WiderFaceDetection(data.Dataset):
             img, target = self.preproc(img, target)
 
         return torch.from_numpy(img), target
+    def pull_item(self, index):
+        """
+        Return the raw image and corresponding annotations.
+        Used for visualization/debugging.
+        """
+        img_path = self.imgs_path[index]
+        img = cv2.imread(img_path, cv2.IMREAD_COLOR)
+        if img is None:
+            raise FileNotFoundError(f"❌ Image not found: {img_path}")
+
+        annotations = np.array(self.words[index], dtype=np.float32)
+        return img, annotations
+
 
 def detection_collate(batch):
     """Custom collate fn for dealing with batches of images that have a different
@@ -99,3 +112,4 @@ def detection_collate(batch):
                 targets.append(annos)
 
     return (torch.stack(imgs, 0), targets)
+    

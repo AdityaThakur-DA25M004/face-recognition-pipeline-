@@ -14,13 +14,13 @@ from utils.timer import Timer
 
 
 parser = argparse.ArgumentParser(description='Retinaface')
-parser.add_argument('-m', '--trained_model', default='./weights/Resnet50_Final.pth',
+parser.add_argument('-m', '--trained_model', default='./runs/finetuned/Final_mobilenet0.25.pth',
                     type=str, help='Trained state_dict file path to open')
-parser.add_argument('--network', default='resnet50', help='Backbone network mobile0.25 or resnet50')
+parser.add_argument('--network', default='mobile0.25', help='Backbone network mobile0.25 or resnet50')
 parser.add_argument('--origin_size', default=True, type=str, help='Whether use origin image size to evaluate')
 parser.add_argument('--save_folder', default='./widerface_evaluate/widerface_txt/', type=str, help='Dir to save txt results')
 parser.add_argument('--cpu', action="store_true", default=False, help='Use cpu inference')
-parser.add_argument('--dataset_folder', default='./data/widerface/val/images/', type=str, help='dataset path')
+parser.add_argument('--dataset_folder', default='./test_images/', type=str, help='dataset path')
 parser.add_argument('--confidence_threshold', default=0.02, type=float, help='confidence_threshold')
 parser.add_argument('--top_k', default=5000, type=int, help='top_k')
 parser.add_argument('--nms_threshold', default=0.4, type=float, help='nms_threshold')
@@ -217,3 +217,161 @@ if __name__ == '__main__':
             name = "./results/" + str(i) + ".jpg"
             cv2.imwrite(name, img_raw)
 
+
+
+# from __future__ import print_function
+# import os
+# import argparse
+# import torch
+# import torch.backends.cudnn as cudnn
+# import numpy as np
+# import cv2
+# from data import cfg_mnet, cfg_re50
+# from layers.functions.prior_box import PriorBox
+# from utils.nms.py_cpu_nms import py_cpu_nms
+# from models.retinaface import RetinaFace
+# from utils.box_utils import decode, decode_landm
+# import matplotlib.pyplot as plt
+# # =====================================
+# # 🔧 ARGUMENTS
+# # =====================================
+# parser = argparse.ArgumentParser(description='RetinaFace Inference for Fine-Tuned Model')
+# parser.add_argument('--trained_model', default='./runs/finetuned/Best_RetinaFace.pth',
+#                     type=str, help='Path to trained model weights')
+# parser.add_argument('--network', default='mobile0.25',
+#                     type=str, choices=['resnet50', 'mobile0.25'], help='Backbone type')
+# parser.add_argument('--cpu', action="store_true", default=False, help='Use CPU instead of CUDA')
+# parser.add_argument('--image_path', type=str, default='./test_images/test.jpg',
+#                     help='Path to a single image or a folder containing images')
+# parser.add_argument('--save_folder', type=str, default='./results/',
+#                     help='Folder to save visualized outputs')
+# parser.add_argument('--confidence_threshold', type=float, default=0.8, help='Confidence threshold')
+# parser.add_argument('--nms_threshold', type=float, default=0.8, help='NMS threshold')
+# parser.add_argument('--vis_thres', type=float, default=0.8, help='Visualization threshold')
+# args = parser.parse_args()
+
+# # =====================================
+# # ⚙️ MODEL LOADING HELPERS
+# # =====================================
+# def check_keys(model, pretrained_state_dict):
+#     ckpt_keys = set(pretrained_state_dict.keys())
+#     model_keys = set(model.state_dict().keys())
+#     used_pretrained_keys = model_keys & ckpt_keys
+#     print(f"✅ Loaded {len(used_pretrained_keys)} keys from checkpoint.")
+#     return True
+
+# def remove_prefix(state_dict, prefix):
+#     print(f"Removing prefix '{prefix}' from checkpoint keys...")
+#     f = lambda x: x.split(prefix, 1)[-1] if x.startswith(prefix) else x
+#     return {f(key): value for key, value in state_dict.items()}
+
+# def load_model(model, pretrained_path, load_to_cpu):
+#     print(f"📦 Loading model from: {pretrained_path}")
+#     if load_to_cpu:
+#         pretrained_dict = torch.load(pretrained_path, map_location='cpu')
+#     else:
+#         pretrained_dict = torch.load(pretrained_path, map_location=lambda storage, loc: storage.cuda())
+#     if "state_dict" in pretrained_dict.keys():
+#         pretrained_dict = remove_prefix(pretrained_dict['state_dict'], 'module.')
+#     else:
+#         pretrained_dict = remove_prefix(pretrained_dict, 'module.')
+#     check_keys(model, pretrained_dict)
+#     model.load_state_dict(pretrained_dict, strict=False)
+#     return model
+
+# # =====================================
+# # 🧠 MODEL SETUP
+# # =====================================
+# torch.set_grad_enabled(False)
+# cfg = cfg_re50 if args.network == "resnet50" else cfg_mnet
+
+# net = RetinaFace(cfg=cfg, phase='test')
+# net = load_model(net, args.trained_model, args.cpu)
+# net.eval()
+# print("✅ Model loaded successfully!")
+
+# device = torch.device("cpu" if args.cpu else "cuda")
+# net = net.to(device)
+# cudnn.benchmark = True
+
+# # =====================================
+# # 🖼️ IMAGE INPUTS
+# # =====================================
+# image_paths = []
+# if os.path.isdir(args.image_path):
+#     for f in os.listdir(args.image_path):
+#         if f.lower().endswith(('.jpg', '.jpeg', '.png')):
+#             image_paths.append(os.path.join(args.image_path, f))
+# else:
+#     image_paths = [args.image_path]
+
+# os.makedirs(args.save_folder, exist_ok=True)
+
+# # =====================================
+# # 🔍 INFERENCE LOOP
+# # =====================================
+# for image_path in image_paths:
+#     print(f"\n🔎 Processing: {image_path}")
+#     img_raw = cv2.imread(image_path, cv2.IMREAD_COLOR)
+#     plt.imshow(img_raw)
+#     if img_raw is None:
+#         print(f"⚠️ Could not read image: {image_path}")
+#         continue
+
+#     img = np.float32(img_raw)
+
+#     im_height, im_width, _ = img.shape
+#     scale = torch.Tensor([im_width, im_height, im_width, im_height])
+#     img -= (104, 117, 123)
+#     img = img.transpose(2, 0, 1)
+#     img = torch.from_numpy(img).unsqueeze(0).to(device)
+#     scale = scale.to(device)
+
+#     # Forward
+#     loc, conf, landms = net(img)
+#     print(f"conf:{conf}")
+#     # print(f"loc:{loc},conf:{conf},lamdms:{landms}")
+#     priorbox = PriorBox(cfg, image_size=(im_height, im_width))
+#     priors = priorbox.forward().to(device)
+#     boxes = decode(loc.data.squeeze(0), priors.data, cfg['variance'])
+#     boxes = boxes * scale
+#     boxes = boxes.cpu().numpy()
+
+#     scores = conf.squeeze(0).data.cpu().numpy()[:, 1]
+
+#     landms = decode_landm(landms.data.squeeze(0), priors.data, cfg['variance'])
+#     scale1 = torch.Tensor([im_width, im_height, im_width, im_height,
+#                            im_width, im_height, im_width, im_height,
+#                            im_width, im_height])
+#     landms = landms * scale1.to(device)
+#     landms = landms.cpu().numpy()
+
+#     # Filter by confidence
+#     inds = np.where(scores > args.confidence_threshold)[0]
+#     boxes, landms, scores = boxes[inds], landms[inds], scores[inds]
+
+#     # NMS
+#     dets = np.hstack((boxes, scores[:, np.newaxis])).astype(np.float32, copy=False)
+#     keep = py_cpu_nms(dets, args.nms_threshold)
+#     dets = dets[keep, :]
+#     landms = landms[keep]
+#     print(landms)
+#     # Visualization
+#     for b, l in zip(dets, landms):
+#         if b[4] < args.vis_thres:
+#             continue
+#         b = list(map(int, b))
+#         text = f"{b[4]:.8f}"
+#         cv2.rectangle(img_raw, (b[0], b[1]), (b[2], b[3]), (0, 255, 0), 2)
+#         cv2.putText(img_raw, text, (b[0], b[1] - 5),
+#                     cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255))
+#         l = list(map(int, l))
+#         for (x, y, color) in zip(
+#             l[0::2], l[1::2],
+#             [(0,0,255),(0,255,255),(255,0,255),(0,255,0),(255,0,0)]
+#         ):
+#             cv2.circle(img_raw, (x, y), 2, color, 2)
+
+#     save_name = os.path.join(args.save_folder, os.path.basename(image_path))
+#     cv2.imwrite(save_name, img_raw)
+#     print(f"💾 Saved result: {save_name}")
