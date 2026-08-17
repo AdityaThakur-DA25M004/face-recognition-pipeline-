@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Model weights / checkpoints
+weights/
+pretrained/
+*.pth
+*.tar
+*.ckpt
+*.pt
+
+# Data / generated artifacts
+logs/
+val_visuals/
+inference_image/
+inference_image_1/
+cropped_images/
+aligned_faces/
+evaluation_images/
+lfw_evaluation_images/
+data/lfw_train.parquet
+test_images/
+face_database/
+embeddings/
+data/my_faces/
+data/epoch_5/
+data/__pycache__/
+debug_faces/
+
+# Outputs
+evaluation_report.txt
+temp_compress.jpg
+test.jpg
+detection/
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# Deprecated/dead code kept locally, not part of the published project
+archive/
+
+# Third-party reference clone (has its own .git + 596MB checkpoint), not part of this project
+AdaFace/

@@ -1,0 +1,15 @@
+torch>=1.9.0
+torchvision>=0.10.0
+opencv-python
+numpy
+Pillow
+matplotlib
+tqdm
+facenet-pytorch
+insightface
+onnxruntime
+faiss-cpu
+langchain
+langchain-community
+langchain-core
+pandas
